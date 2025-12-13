@@ -20,7 +20,7 @@
   <div class="card pad">
     <h2>Sign in</h2>
     <p class="small" style="margin-bottom:10px; opacity:.8">
-      Use the admin credentials configured in <code>.env</code>.
+      Use the admin credentials configured in backend env.
     </p>
     <form id="admin-login-form" class="grid">
       <input class="input" type="email" id="email" placeholder="Email" required>
@@ -33,21 +33,14 @@
 
 <div class="nav">
   <div class="bar">
-    <a class="tab" href="index.html"><span class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M4 11.5L12 4l8 7.5"/><path d="M6.5 10.5V20h11V10.5"/>
-      </svg>
-    </span></a>
-    <a class="tab active" href="login-admin.html"><span class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M12 8a4 4 0 100 8 4 4 0 000-8z"/>
-        <path d="M3 12l2.2-1M19 12l1.9-1M7 4l1.1 2M17 4l-1.1 2M7 20l1.1-2M17 20l-1.1-2"/>
-      </svg>
-    </span></a>
+    <a class="tab" href="index.html">🏠</a>
+    <a class="tab active" href="login-admin.html">👤</a>
   </div>
 </div>
 
 <script>
+  const API_BASE = "https://pasafe-2.onrender.com";
+
   document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("admin-login-form");
     const errorBox = document.getElementById("login-error");
@@ -67,7 +60,7 @@
       }
 
       try {
-        const res = await fetch("/api/admin/login", {
+        const res = await fetch(`${API_BASE}/api/admin/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
@@ -81,12 +74,13 @@
           return;
         }
 
-        // Save token and redirect to dashboard
+        // Save token and redirect
         localStorage.setItem("adminToken", data.token);
         window.location.href = "tracking.html";
+
       } catch (err) {
         console.error(err);
-        errorBox.textContent = "Network error. Is the backend running on port 3000?";
+        errorBox.textContent = "Network error. Backend not reachable.";
         errorBox.style.display = "block";
       }
     });
