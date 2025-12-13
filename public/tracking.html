@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Vehicle Tracking</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <a class="back" href="index.html" aria-label="Back">←</a>
+    <h1>Live Vehicle Tracking</h1>
+  </div>
+
+  <!-- Map / latest location card -->
+  <div class="card pad" style="height:200px">
+    <div class="row" style="justify-content:space-between">
+      <span class="tag" id="device-label">Device 1 • Map preview</span>
+      <a class="link small" id="maps-link" href="#" target="_blank"
+         style="pointer-events:none; opacity:.6">
+        Open in Maps
+      </a>
+    </div>
+    <div id="map-box"
+         style="height:140px; border-radius:12px; border:1px dashed #1b304f; display:grid; place-items:center; color:#91a7c0; text-align:center; padding:6px;">
+      <div>
+        <div id="map-status">(Loading latest location...)</div>
+        <div class="small" id="map-meta" style="margin-top:4px; opacity:.9"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts list -->
+  <h2 style="margin:16px 0 8px">Alerts</h2>
+  <div id="alerts-list" class="list">
+    <div class="small" style="opacity:.7">Loading alerts...</div>
+  </div>
+</div>
+
+<!-- bottom nav -->
+<div class="nav">
+  <div class="bar">
+    <a class="tab active" href="tracking.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M4 11.5L12 4l8 7.5"/><path d="M6.5 10.5V20h11V10.5"/>
+      </svg>
+    </span></a>
+    <a class="tab" href="alerts.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M18 10a6 6 0 10-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M9 20h6"/>
+      </svg>
+    </span></a>
+    <a class="tab" href="accident.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 3l10 18H2L12 3z"/><path d="M12 9v4m0 4h.01"/>
+      </svg>
+    </span></a>
+    <a class="tab" href="analytics.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+        <path d="M3 12l2.2-1M19 12l1.9-1M7 4l1.1 2M17 4l-1.1 2M7 20l1.1-2M17 20l-1.1-2"/>
+      </svg>
+    </span></a>
+  </div>
+</div>
+
+<script>
+  // --------- helpers ---------
+  function getDeviceIdFromQuery() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const d = params.get("device");
+      const n = d != null ? Number(d) : NaN;
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    } catch {
+      return 1;
+    }
+  }
+
+  // default device id (can override via ?device=2 in URL)
+  const DEFAULT_DEVICE_ID = getDeviceIdFromQuery();
+
+  // ----------------- LATEST READING / MAP CARD -----------------
+
+  async function fetchLatest(deviceId) {
+    try {
+      const res = await fetch(`/api/readings/latest/${deviceId}`);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      updateMapCard(data, deviceId);
+    } catch (err) {
+      console.error(err);
+      const statusEl = document.getElementById("map-status");
+      const metaEl = document.getElementById("map-meta");
+      statusEl.textContent = "Error loading latest location.";
+      metaEl.textContent = err.message;
+    }
+  }
+
+  function updateMapCard(data, deviceId) {
+    const statusEl = document.getElementById("map-status");
+    const metaEl = document.getElementById("map-meta");
+    const deviceLabel = document.getElementById("device-label");
+    const mapsLink = document.getElementById("maps-link");
+
+    deviceLabel.textContent = `Device ${deviceId} • Map preview`;
+
+    if (!data || Object.keys(data).length === 0) {
+      statusEl.textContent = "No data yet for this device.";
+      metaEl.textContent = "";
+      mapsLink.href = "#";
+      mapsLink.style.pointerEvents = "none";
+      mapsLink.style.opacity = ".6";
+      return;
+    }
+
+    const lat = data.lat ?? "-";
+    const lon = data.lon ?? "-";
+    const created = data.created_at
+      ? new Date(Number(data.created_at)).toLocaleString()
+      : "Unknown time";
+
+    statusEl.textContent = (lat !== "-" && lon !== "-")
+      ? `Lat ${lat}, Lon ${lon}`
+      : "Location not available.";
+
+    metaEl.textContent = `Last update • Device ${data.device_id ?? deviceId} • ${created}`;
+
+    if (lat !== "-" && lon !== "-") {
+      mapsLink.href = `https://www.google.com/maps?q=${lat},${lon}`;
+      mapsLink.style.pointerEvents = "auto";
+      mapsLink.style.opacity = "1";
+    } else {
+      mapsLink.href = "#";
+      mapsLink.style.pointerEvents = "none";
+      mapsLink.style.opacity = ".6";
+    }
+  }
+
+  // ----------------- ALERTS (ALCOHOL + ACCIDENT) -----------------
+
+  // Fetch alerts from backend and tag them with "category" (alcohol/accident)
+  async function fetchAlerts(category) {
+    const res = await fetch(`/api/alerts?type=${encodeURIComponent(category)}`);
+    if (!res.ok) throw new Error(category + " HTTP " + res.status);
+    const data = await res.json();
+    return Array.isArray(data)
+      ? data.map(a => ({ ...a, category }))
+      : [];
+  }
+
+  async function loadAlerts() {
+    const container = document.getElementById("alerts-list");
+    container.innerHTML = `<div class="small" style="opacity:.7">Loading alerts...</div>`;
+
+    try {
+      const [accidentAlerts, alcoholAlerts] = await Promise.all([
+        fetchAlerts("accident"),
+        fetchAlerts("alcohol")
+      ]);
+
+      const merged = [...accidentAlerts, ...alcoholAlerts].sort((a, b) => {
+        const ta = Number(a.created_at) || 0;
+        const tb = Number(b.created_at) || 0;
+        return tb - ta; // newest first
+      });
+
+      const latest = merged.slice(0, 4); // show top 4 alerts
+      renderAlerts(latest);
+    } catch (err) {
+      console.error(err);
+      container.innerHTML =
+        `<div class="small" style="opacity:.8">Error loading alerts: ${err.message}</div>`;
+    }
+  }
+
+  function renderAlerts(alerts) {
+    const container = document.getElementById("alerts-list");
+    container.innerHTML = "";
+
+    if (!alerts.length) {
+      container.innerHTML = `<div class="small" style="opacity:.8">No recent alerts.</div>`;
+      return;
+    }
+
+    alerts.forEach(alert => {
+      const item = document.createElement("div");
+      item.className = "item";
+
+      const created = alert.created_at
+        ? new Date(Number(alert.created_at)).toLocaleTimeString()
+        : "";
+
+      const isAccident = alert.category === "accident";
+      const badgeLabel = isAccident ? "Accident" : "Alcohol";
+
+      const title = isAccident
+        ? (alert.type === "fall_detected" ? "Fall detected"
+           : alert.type === "sos_pressed" ? "SOS pressed"
+           : "Accident detected")
+        : "Alcohol driving";
+
+      const unit = alert.device_id != null
+        ? `Device ${alert.device_id}`
+        : "Unknown unit";
+      const timeText = created ? `${unit} • ${created}` : unit;
+
+      const linkHref = isAccident ? "accident.html" : "alerts.html";
+      const linkLabel = isAccident ? "OPEN" : "DETAIL";
+
+      item.innerHTML = `
+        <div class="l">
+          <span class="badge ${isAccident ? "alert" : ""}">${badgeLabel}</span>
+          <div>
+            <div>${title}</div>
+            <div class="small">${timeText}</div>
+          </div>
+        </div>
+        <a class="link small" href="${linkHref}">${linkLabel}</a>
+      `;
+
+      container.appendChild(item);
+    });
+  }
+
+  // ----------------- INITIAL LOAD + POLLING -----------------
+
+  window.addEventListener("load", () => {
+    fetchLatest(DEFAULT_DEVICE_ID);
+    loadAlerts();
+
+    // Poll backend so authority sees live updates
+    setInterval(() => fetchLatest(DEFAULT_DEVICE_ID), 5000);  // every 5s
+    setInterval(loadAlerts, 8000);                            // every 8s
+  });
+</script>
+</body>
+</html>

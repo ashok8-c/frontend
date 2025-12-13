@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emergency Alerts</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <a class="back" href="tracking.html" aria-label="Back">←</a>
+    <h1>Emergency Alerts</h1>
+  </div>
+
+  <div class="card pad">
+    <div class="row" style="justify-content:space-between">
+      <span class="tag">Live Alert Feed</span>
+      <a class="link small" href="#" id="export-link">Export</a>
+    </div>
+
+    <div id="alerts-list" class="list" style="margin-top:10px">
+      <div class="small" style="opacity:0.6">Fetching alerts...</div>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="bar">
+    <a class="tab" href="tracking.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M4 11.5L12 4l8 7.5"/><path d="M6.5 10.5V20h11V10.5"/>
+      </svg>
+    </span></a>
+
+    <a class="tab active" href="alerts.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M18 10a6 6 0 10-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M9 20h6"/>
+      </svg>
+    </span></a>
+
+    <a class="tab" href="accident.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 3l10 18H2L12 3z"/><path d="M12 9v4m0 4h.01"/>
+      </svg>
+    </span></a>
+
+    <a class="tab" href="analytics.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+        <path d="M3 12l2.2-1M19 12l1.9-1M7 4l1.1 2M17 4l-1.1 2M7 20l1.1-2M17 20l-1.1-2"/>
+      </svg>
+    </span></a>
+  </div>
+</div>
+
+<script>
+  let latestAlerts = [];
+
+  async function fetchAllAlerts() {
+    const res = await fetch('/api/alerts');
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  // Decide how to show an alert based on its type from DB
+  function mapAlertType(a) {
+    if (a.type === "alcohol_alert") {
+      return { label: "Alcohol Alert", badge: "", notify: "POLICE" };
+    }
+    // fall_detected, sos_pressed, ble_* etc treated as accident/emergency
+    return { label: "Accident Detected", badge: "alert", notify: "HOSPITAL" };
+  }
+
+  function renderAlerts(alerts) {
+    const container = document.getElementById("alerts-list");
+    container.innerHTML = "";
+
+    if (!alerts.length) {
+      container.innerHTML = "<div class='small'>No alerts yet.</div>";
+      return;
+    }
+
+    alerts.forEach(a => {
+      const created = a.created_at
+        ? new Date(Number(a.created_at)).toLocaleString()
+        : "Time unknown";
+
+      const typeInfo = mapAlertType(a);
+      const badgeClass = typeInfo.badge ? "badge alert" : "badge";
+
+      const item = document.createElement("div");
+      item.className = "item";
+      item.innerHTML = `
+        <div class="l">
+          <span class="${badgeClass}">${typeInfo.label}</span>
+          <div>
+            <div>Device ${a.device_id ?? "-"}</div>
+            <div class="small">${created}</div>
+          </div>
+        </div>
+        <a class="link small"
+           href="https://maps.google.com/?q=${a.lat ?? ""},${a.lon ?? ""}"
+           target="_blank">MAP</a>
+      `;
+      container.appendChild(item);
+    });
+  }
+
+  function exportAlerts() {
+    if (!latestAlerts.length) {
+      alert("No alerts to export");
+      return;
+    }
+
+    const headers = ["id","device_id","type","lat","lon","created_at"];
+    const rows = latestAlerts.map(a => [
+      a.id,
+      a.device_id,
+      a.type,
+      a.lat ?? "",
+      a.lon ?? "",
+      a.created_at ? new Date(Number(a.created_at)).toISOString() : ""
+    ]);
+
+    const csv = [headers, ...rows]
+      .map(r => r.join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "alerts.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadAlerts() {
+    const container = document.getElementById("alerts-list");
+    container.innerHTML =
+      "<div class='small' style='opacity:.7'>Loading alerts...</div>";
+
+    try {
+      const alerts = await fetchAllAlerts();
+
+      // Sort newest first as extra safety (even though backend already orders)
+      alerts.sort((a, b) => {
+        const ta = Number(a.created_at) || 0;
+        const tb = Number(b.created_at) || 0;
+        return tb - ta;
+      });
+
+      latestAlerts = alerts;
+      renderAlerts(alerts);
+    } catch (err) {
+      console.error(err);
+      container.innerHTML =
+        `<div class="small" style="opacity:.8">Error loading alerts: ${err.message}</div>`;
+    }
+  }
+
+  window.onload = () => {
+    loadAlerts();
+
+    document.getElementById("export-link").onclick = e => {
+      e.preventDefault();
+      exportAlerts();
+    };
+
+    // auto refresh every 10s
+    setInterval(loadAlerts, 10000);
+  };
+</script>
+
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>View Accident</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <a class="back" href="tracking.html" aria-label="Back">←</a>
+    <h1>View Accident</h1>
+  </div>
+
+  <div class="card pad">
+    <div class="kpi">
+      <span class="tag"><strong class="stat">SOS</strong> alerts</span>
+      <span class="tag">Accident Records</span>
+    </div>
+
+    <div class="grid" style="margin-top:12px">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <span class="badge alert">Emergency</span>
+          <span>Auto on</span>
+        </div>
+        <a class="link small" href="alerts.html">Open list</a>
+      </div>
+
+      <div id="accident-list" class="list">
+        <div class="small" style="opacity:.6">Fetching accident alerts...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="split" style="margin-top:14px">
+    <button class="btn danger" onclick="alert('Hospital notified')">NOTIFY HOSPITAL</button>
+    <button class="btn warn" onclick="alert('Police notified')">NOTIFY POLICE</button>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="bar">
+    <a class="tab" href="tracking.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M4 11.5L12 4l8 7.5"/><path d="M6.5 10.5V20h11V10.5"/>
+      </svg>
+    </span></a>
+
+    <a class="tab" href="alerts.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M18 10a6 6 0 10-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M9 20h6"/>
+      </svg>
+    </span></a>
+
+    <a class="tab active" href="accident.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 3l10 18H2L12 3z"/><path d="M12 9v4m0 4h.01"/>
+      </svg>
+    </span></a>
+
+    <a class="tab" href="analytics.html"><span class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+        <path d="M3 12l2.2-1M19 12l1.9-1M7 4l1.1 2M17 4l-1.1 2M7 20l1.1-2M17 20l-1.1-2"/>
+      </svg>
+    </span></a>
+  </div>
+</div>
+
+<script>
+  async function loadAccidents() {
+    const listEl = document.getElementById("accident-list");
+    listEl.innerHTML =
+      "<div class='small' style='opacity:.7'>Loading...</div>";
+
+    try {
+      const res = await fetch("/api/alerts?type=accident");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+
+      const data = await res.json();
+      const alerts = Array.isArray(data) ? data : [];
+
+      if (!alerts.length) {
+        listEl.innerHTML = "<div class='small'>No accident alerts yet.</div>";
+        return;
+      }
+
+      // newest first
+      alerts.sort((a, b) =>
+        (Number(b.created_at) || 0) - (Number(a.created_at) || 0)
+      );
+
+      listEl.innerHTML = "";
+
+      alerts.forEach(alert => {
+        const item = document.createElement("div");
+        item.className = "item";
+
+        const created = alert.created_at
+          ? new Date(Number(alert.created_at)).toLocaleString()
+          : "Unknown time";
+
+        const lat = alert.lat ?? "—";
+        const lon = alert.lon ?? "—";
+
+        // label based on type from DB
+        let title = "Accident detected";
+        if (alert.type === "fall_detected") title = "Fall detected";
+        else if (alert.type === "sos_pressed") title = "SOS pressed";
+
+        // Build route link only if we have coordinates
+        let routeHref = "#";
+        let routeAttrs = 'class="link small"';
+        if (alert.lat != null && alert.lon != null) {
+          routeHref = `https://www.google.com/maps/dir/?api=1&destination=${alert.lat},${alert.lon}`;
+          routeAttrs += ' target="_blank"';
+        } else {
+          routeAttrs += ' style="pointer-events:none; opacity:.6"';
+        }
+
+        item.innerHTML = `
+          <div class="l">
+            <span class="badge alert">Accident</span>
+            <div>
+              <div>${title}</div>
+              <div class="small">
+                Device ${alert.device_id || "?"} • Lat ${lat}, Lon ${lon} • ${created}
+              </div>
+            </div>
+          </div>
+          <a href="${routeHref}" ${routeAttrs}>Route</a>
+        `;
+
+        listEl.appendChild(item);
+      });
+
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = `
+        <div class='small' style='color:#ffb4b4'>
+          Error loading data: ${err.message}
+        </div>`;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadAccidents();
+    // auto-refresh accident list every 10s
+    setInterval(loadAccidents, 10000);
+  });
+</script>
+</body>
+</html>
