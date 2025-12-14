@@ -31,7 +31,6 @@
     <a class="tab" href="tracking.html">🏠</a>
     <a class="tab active" href="alerts.html">🔔</a>
     <a class="tab" href="accident.html">⚠️</a>
-    <a class="tab" href="analytics.html">📊</a>
   </div>
 </div>
 
@@ -41,16 +40,33 @@
 
   async function fetchAllAlerts() {
     const res = await fetch(`${API_BASE}/api/alerts`);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    return await res.json();
   }
 
-  function mapAlertType(a) {
-    if (a.type === "alcohol_alert") {
-      return { label: "Alcohol Alert", badge: "", notify: "POLICE" };
+  function getNotifyTarget(alert) {
+    if (alert.type === "alcohol_alert") {
+      return { label: "Notify Police", authority: "police" };
     }
-    return { label: "Accident Detected", badge: "alert", notify: "HOSPITAL" };
+    return { label: "Notify Hospital", authority: "hospital" };
+  }
+
+  async function notifyAuthority(alertId, authority) {
+    try {
+      const res = await fetch(`${API_BASE}/api/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alert_id: alertId, authority })
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        alert(`${authority.toUpperCase()} notified`);
+      } else {
+        alert("Notification failed");
+      }
+    } catch {
+      alert("Server error");
+    }
   }
 
   function renderAlerts(alerts) {
@@ -67,87 +83,76 @@
         ? new Date(Number(a.created_at)).toLocaleString()
         : "Time unknown";
 
-      const typeInfo = mapAlertType(a);
-      const badgeClass = typeInfo.badge ? "badge alert" : "badge";
-
       const mapLink =
         a.lat != null && a.lon != null
           ? `https://maps.google.com/?q=${a.lat},${a.lon}`
           : "#";
 
+      const notify = getNotifyTarget(a);
+
       const item = document.createElement("div");
       item.className = "item";
+
       item.innerHTML = `
         <div class="l">
-          <span class="${badgeClass}">${typeInfo.label}</span>
+          <span class="badge ${a.type === 'alcohol_alert' ? '' : 'alert'}">
+            ${a.type === 'alcohol_alert' ? 'Alcohol' : 'Accident'}
+          </span>
           <div>
-            <div>Device ${a.device_id ?? "-"}</div>
+            <div>Device ${a.device_id}</div>
             <div class="small">${created}</div>
           </div>
         </div>
-        <a class="link small"
-           href="${mapLink}"
-           target="_blank">MAP</a>
+        <div style="display:flex; gap:6px">
+          <a class="link small" href="${mapLink}" target="_blank">MAP</a>
+          <button class="btn small"
+            onclick="notifyAuthority('${a.id}','${notify.authority}')">
+            ${notify.label}
+          </button>
+        </div>
       `;
+
       container.appendChild(item);
     });
   }
 
   function exportAlerts() {
-    if (!latestAlerts.length) {
-      alert("No alerts to export");
-      return;
-    }
+    if (!latestAlerts.length) return alert("No alerts");
 
-    const headers = ["id","device_id","type","lat","lon","created_at"];
-    const rows = latestAlerts.map(a => [
-      a.id,
-      a.device_id,
-      a.type,
-      a.lat ?? "",
-      a.lon ?? "",
-      a.created_at ? new Date(Number(a.created_at)).toISOString() : ""
-    ]);
+    const csv = [
+      ["id","device_id","type","lat","lon","created_at"],
+      ...latestAlerts.map(a => [
+        a.id,
+        a.device_id,
+        a.type,
+        a.lat ?? "",
+        a.lon ?? "",
+        new Date(Number(a.created_at)).toISOString()
+      ])
+    ].map(r => r.join(",")).join("\n");
 
-    const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
-
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "alerts.csv";
-    link.click();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "alerts.csv";
+    a.click();
     URL.revokeObjectURL(url);
   }
 
   async function loadAlerts() {
-    const container = document.getElementById("alerts-list");
-    container.innerHTML =
-      "<div class='small' style='opacity:.7'>Loading alerts...</div>";
-
-    try {
-      const alerts = await fetchAllAlerts();
-
-      alerts.sort((a, b) =>
-        (Number(b.created_at) || 0) - (Number(a.created_at) || 0)
-      );
-
-      latestAlerts = alerts;
-      renderAlerts(alerts);
-    } catch (err) {
-      container.innerHTML =
-        `<div class="small" style="opacity:.8">Error loading alerts: ${err.message}</div>`;
-    }
+    const alerts = await fetchAllAlerts();
+    alerts.sort((a,b)=> (b.created_at||0)-(a.created_at||0));
+    latestAlerts = alerts;
+    renderAlerts(alerts);
   }
 
   window.onload = () => {
     loadAlerts();
-
     document.getElementById("export-link").onclick = e => {
       e.preventDefault();
       exportAlerts();
     };
-
     setInterval(loadAlerts, 10000);
   };
 </script>
