@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Emergency Alerts</title>
+  <title>View Accident</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,56 +11,122 @@
 <div class="app">
   <div class="header">
     <a class="back" href="tracking.html" aria-label="Back">←</a>
-    <h1>Emergency Alerts</h1>
+    <h1>View Accident</h1>
   </div>
 
   <div class="card pad">
-    <div class="row" style="justify-content:space-between">
-      <span class="tag">Live Alert Feed</span>
-      <a class="link small" href="#" id="export-link">Export</a>
+    <div class="kpi">
+      <span class="tag"><strong class="stat">SOS</strong> alerts</span>
+      <span class="tag">Accident Records</span>
     </div>
 
-    <div id="alerts-list" class="list" style="margin-top:10px">
-      <div class="small" style="opacity:0.6">Fetching alerts...</div>
+    <div id="accident-list" class="list" style="margin-top:12px">
+      <div class="small" style="opacity:.6">Fetching accident alerts...</div>
     </div>
+  </div>
+
+  <!-- ACTION BUTTONS -->
+  <div class="split" style="margin-top:14px">
+    <button id="notifyHospital" class="btn danger">NOTIFY HOSPITAL</button>
+    <button id="notifyPolice" class="btn warn">NOTIFY POLICE</button>
   </div>
 </div>
 
 <div class="nav">
   <div class="bar">
     <a class="tab" href="tracking.html">🏠</a>
-    <a class="tab active" href="alerts.html">🔔</a>
-    <a class="tab" href="accident.html">⚠️</a>
+    <a class="tab" href="alerts.html">🔔</a>
+    <a class="tab active" href="accident.html">⚠️</a>
   </div>
 </div>
 
 <script>
   const API_BASE = "https://pasafe-2.onrender.com";
-  let latestAlerts = [];
+  let selectedAlertId = null;
 
-  async function fetchAllAlerts() {
-    const res = await fetch(`${API_BASE}/api/alerts`);
-    return await res.json();
-  }
+  async function loadAccidents() {
+    const listEl = document.getElementById("accident-list");
+    listEl.innerHTML = "<div class='small'>Loading...</div>";
 
-  function getNotifyTarget(alert) {
-    if (alert.type === "alcohol_alert") {
-      return { label: "Notify Police", authority: "police" };
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts`);
+      const alerts = await res.json();
+
+      const accidentAlerts = alerts.filter(a =>
+        a.type !== 'alcohol_alert'
+      );
+
+      if (!accidentAlerts.length) {
+        listEl.innerHTML = "<div class='small'>No accident alerts yet.</div>";
+        return;
+      }
+
+      accidentAlerts.sort((a, b) =>
+        (Number(b.created_at) || 0) - (Number(a.created_at) || 0)
+      );
+
+      listEl.innerHTML = "";
+
+      accidentAlerts.forEach(alert => {
+        const item = document.createElement("div");
+        item.className = "item";
+        item.style.cursor = "pointer";
+
+        const created = new Date(alert.created_at).toLocaleString();
+        const lat = alert.lat ?? "—";
+        const lon = alert.lon ?? "—";
+
+        item.innerHTML = `
+          <div class="l">
+            <span class="badge alert">Accident</span>
+            <div>
+              <div>${alert.type.replace('_',' ')}</div>
+              <div class="small">
+                Device ${alert.device_id} • ${created}
+              </div>
+            </div>
+          </div>
+        `;
+
+        item.onclick = () => {
+          document.querySelectorAll('.item')
+            .forEach(el => el.style.background = "");
+          item.style.background = "#1e2a3a";
+          selectedAlertId = alert.id;
+        };
+
+        listEl.appendChild(item);
+      });
+
+      // auto-select latest
+      selectedAlertId = accidentAlerts[0].id;
+      listEl.firstChild.style.background = "#1e2a3a";
+
+    } catch (err) {
+      listEl.innerHTML = `<div class="small">Error loading alerts</div>`;
     }
-    return { label: "Notify Hospital", authority: "hospital" };
   }
 
-  async function notifyAuthority(alertId, authority) {
+  async function notifyAuthority(authority) {
+    if (!selectedAlertId) {
+      alert("No alert selected");
+      return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/api/notify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alert_id: alertId, authority })
+        body: JSON.stringify({
+          alert_id: selectedAlertId,
+          authority
+        })
       });
 
       const data = await res.json();
+
       if (data.ok) {
-        alert(`${authority.toUpperCase()} notified`);
+        alert(`${authority.toUpperCase()} notified successfully`);
       } else {
         alert("Notification failed");
       }
@@ -69,92 +135,13 @@
     }
   }
 
-  function renderAlerts(alerts) {
-    const container = document.getElementById("alerts-list");
-    container.innerHTML = "";
+  document.getElementById("notifyHospital")
+    .onclick = () => notifyAuthority("hospital");
 
-    if (!alerts.length) {
-      container.innerHTML = "<div class='small'>No alerts yet.</div>";
-      return;
-    }
+  document.getElementById("notifyPolice")
+    .onclick = () => notifyAuthority("police");
 
-    alerts.forEach(a => {
-      const created = a.created_at
-        ? new Date(Number(a.created_at)).toLocaleString()
-        : "Time unknown";
-
-      const mapLink =
-        a.lat != null && a.lon != null
-          ? `https://maps.google.com/?q=${a.lat},${a.lon}`
-          : "#";
-
-      const notify = getNotifyTarget(a);
-
-      const item = document.createElement("div");
-      item.className = "item";
-
-      item.innerHTML = `
-        <div class="l">
-          <span class="badge ${a.type === 'alcohol_alert' ? '' : 'alert'}">
-            ${a.type === 'alcohol_alert' ? 'Alcohol' : 'Accident'}
-          </span>
-          <div>
-            <div>Device ${a.device_id}</div>
-            <div class="small">${created}</div>
-          </div>
-        </div>
-        <div style="display:flex; gap:6px">
-          <a class="link small" href="${mapLink}" target="_blank">MAP</a>
-          <button class="btn small"
-            onclick="notifyAuthority('${a.id}','${notify.authority}')">
-            ${notify.label}
-          </button>
-        </div>
-      `;
-
-      container.appendChild(item);
-    });
-  }
-
-  function exportAlerts() {
-    if (!latestAlerts.length) return alert("No alerts");
-
-    const csv = [
-      ["id","device_id","type","lat","lon","created_at"],
-      ...latestAlerts.map(a => [
-        a.id,
-        a.device_id,
-        a.type,
-        a.lat ?? "",
-        a.lon ?? "",
-        new Date(Number(a.created_at)).toISOString()
-      ])
-    ].map(r => r.join(",")).join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "alerts.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function loadAlerts() {
-    const alerts = await fetchAllAlerts();
-    alerts.sort((a,b)=> (b.created_at||0)-(a.created_at||0));
-    latestAlerts = alerts;
-    renderAlerts(alerts);
-  }
-
-  window.onload = () => {
-    loadAlerts();
-    document.getElementById("export-link").onclick = e => {
-      e.preventDefault();
-      exportAlerts();
-    };
-    setInterval(loadAlerts, 10000);
-  };
+  document.addEventListener("DOMContentLoaded", loadAccidents);
 </script>
 
 </body>
