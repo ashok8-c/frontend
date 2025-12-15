@@ -7,35 +7,41 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
 <div class="app">
   <div class="header">
     <a class="back" href="index.html" aria-label="Back">←</a>
     <h1>Live Vehicle Tracking</h1>
   </div>
 
+  <!-- MAP CARD -->
   <div class="card pad" style="height:200px">
     <div class="row" style="justify-content:space-between">
-      <span class="tag" id="device-label">Device 1 • Map preview</span>
+      <span class="tag" id="device-label">Device • Map preview</span>
       <a class="link small" id="maps-link" href="#" target="_blank"
          style="pointer-events:none; opacity:.6">
         Open in Maps
       </a>
     </div>
+
     <div id="map-box"
-         style="height:140px; border-radius:12px; border:1px dashed #1b304f; display:grid; place-items:center; color:#91a7c0; text-align:center; padding:6px;">
+      style="height:140px; border-radius:12px; border:1px dashed #1b304f;
+             display:grid; place-items:center; color:#91a7c0; text-align:center;">
       <div>
-        <div id="map-status">(Loading latest location...)</div>
+        <div id="map-status">Loading latest location…</div>
         <div class="small" id="map-meta" style="margin-top:4px; opacity:.9"></div>
       </div>
     </div>
   </div>
 
+  <!-- ALERTS -->
   <h2 style="margin:16px 0 8px">Alerts</h2>
   <div id="alerts-list" class="list">
-    <div class="small" style="opacity:.7">Loading alerts...</div>
+    <div class="small" style="opacity:.7">Loading alerts…</div>
   </div>
 </div>
 
+<!-- NAV -->
 <div class="nav">
   <div class="bar">
     <a class="tab active" href="tracking.html">🏠</a>
@@ -46,164 +52,147 @@
 </div>
 
 <script>
-  const API_BASE = "https://pasafe-2.onrender.com";
+const API_BASE = "https://pasafe-2.onrender.com";
 
-  function getDeviceIdFromQuery() {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const d = params.get("device");
-      const n = d != null ? Number(d) : NaN;
-      return Number.isFinite(n) && n > 0 ? n : 1;
-    } catch {
-      return 1;
-    }
+/* =====================
+   HELPERS
+===================== */
+
+function getDeviceIdFromQuery() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("device") || "1";
+  } catch {
+    return "1";
   }
+}
 
-  const DEFAULT_DEVICE_ID = getDeviceIdFromQuery();
+function getAlertCategory(type) {
+  if (type === "alcohol_alert") return "alcohol";
+  if (type && type.startsWith("ble_")) return "accident";
+  return "accident";
+}
 
-  // ---------------- LATEST LOCATION ----------------
+const DEVICE_ID = getDeviceIdFromQuery();
 
-  async function fetchLatest(deviceId) {
-    try {
-      const res = await fetch(`${API_BASE}/api/readings/latest/${deviceId}`);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
-      updateMapCard(data, deviceId);
-    } catch (err) {
-      document.getElementById("map-status").textContent =
-        "Error loading latest location.";
-      document.getElementById("map-meta").textContent = err.message;
-    }
-  }
+/* =====================
+   MAP / LOCATION
+===================== */
 
-  function updateMapCard(data, deviceId) {
-    const statusEl = document.getElementById("map-status");
-    const metaEl = document.getElementById("map-meta");
-    const deviceLabel = document.getElementById("device-label");
-    const mapsLink = document.getElementById("maps-link");
-
-    deviceLabel.textContent = `Device ${deviceId} • Map preview`;
-
-    if (!data || Object.keys(data).length === 0) {
-      statusEl.textContent = "No data yet for this device.";
-      metaEl.textContent = "";
-      mapsLink.style.pointerEvents = "none";
-      mapsLink.style.opacity = ".6";
-      return;
-    }
-
-    const lat = data.lat ?? "-";
-    const lon = data.lon ?? "-";
-    const created = data.created_at
-      ? new Date(Number(data.created_at)).toLocaleString()
-      : "Unknown time";
-
-    statusEl.textContent =
-      lat !== "-" && lon !== "-"
-        ? `Lat ${lat}, Lon ${lon}`
-        : "Location not available.";
-
-    metaEl.textContent = `Last update • Device ${data.device_id ?? deviceId} • ${created}`;
-
-    if (lat !== "-" && lon !== "-") {
-      mapsLink.href = `https://www.google.com/maps?q=${lat},${lon}`;
-      mapsLink.style.pointerEvents = "auto";
-      mapsLink.style.opacity = "1";
-    } else {
-      mapsLink.style.pointerEvents = "none";
-      mapsLink.style.opacity = ".6";
-    }
-  }
-
-  // ---------------- ALERTS ----------------
-
-  async function fetchAlerts(category) {
-    const res = await fetch(`${API_BASE}/api/alerts?type=${encodeURIComponent(category)}`);
-    if (!res.ok) throw new Error(category + " HTTP " + res.status);
+async function fetchLatest(deviceId) {
+  try {
+    const res = await fetch(`${API_BASE}/api/readings/latest/${deviceId}`);
     const data = await res.json();
-    return Array.isArray(data)
-      ? data.map(a => ({ ...a, category }))
-      : [];
+    updateMapCard(data, deviceId);
+  } catch {
+    document.getElementById("map-status").textContent =
+      "Unable to load location.";
+  }
+}
+
+function updateMapCard(data, deviceId) {
+  const status = document.getElementById("map-status");
+  const meta = document.getElementById("map-meta");
+  const label = document.getElementById("device-label");
+  const mapLink = document.getElementById("maps-link");
+
+  label.textContent = `Device ${deviceId} • Map preview`;
+
+  if (!data || !data.lat || !data.lon) {
+    status.textContent = "No data yet for this device.";
+    meta.textContent = "";
+    mapLink.style.pointerEvents = "none";
+    mapLink.style.opacity = ".6";
+    return;
   }
 
-  async function loadAlerts() {
-    const container = document.getElementById("alerts-list");
+  status.textContent = `Lat ${data.lat}, Lon ${data.lon}`;
+  meta.textContent =
+    `Last update • ${new Date(Number(data.ts || Date.now())).toLocaleString()}`;
+
+  mapLink.href = `https://www.google.com/maps?q=${data.lat},${data.lon}`;
+  mapLink.style.pointerEvents = "auto";
+  mapLink.style.opacity = "1";
+}
+
+/* =====================
+   ALERTS
+===================== */
+
+async function loadAlerts() {
+  const container = document.getElementById("alerts-list");
+  container.innerHTML =
+    `<div class="small" style="opacity:.7">Loading alerts…</div>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/alerts`);
+    const alerts = await res.json();
+
+    const normalized = alerts.map(a => ({
+      ...a,
+      category: getAlertCategory(a.type)
+    }));
+
+    normalized.sort(
+      (a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0)
+    );
+
+    renderAlerts(normalized.slice(0, 4));
+  } catch {
     container.innerHTML =
-      `<div class="small" style="opacity:.7">Loading alerts...</div>`;
+      `<div class="small" style="opacity:.8">Failed to load alerts</div>`;
+  }
+}
 
-    try {
-      const [accidentAlerts, alcoholAlerts] = await Promise.all([
-        fetchAlerts("accident"),
-        fetchAlerts("alcohol")
-      ]);
+function renderAlerts(alerts) {
+  const container = document.getElementById("alerts-list");
+  container.innerHTML = "";
 
-      const merged = [...accidentAlerts, ...alcoholAlerts].sort(
-        (a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0)
-      );
-
-      renderAlerts(merged.slice(0, 4));
-    } catch (err) {
-      container.innerHTML =
-        `<div class="small" style="opacity:.8">Error loading alerts: ${err.message}</div>`;
-    }
+  if (!alerts.length) {
+    container.innerHTML =
+      `<div class="small" style="opacity:.8">No recent alerts.</div>`;
+    return;
   }
 
-  function renderAlerts(alerts) {
-    const container = document.getElementById("alerts-list");
-    container.innerHTML = "";
+  alerts.forEach(alert => {
+    const isAccident = alert.category === "accident";
+    const created = alert.created_at
+      ? new Date(Number(alert.created_at)).toLocaleTimeString()
+      : "";
 
-    if (!alerts.length) {
-      container.innerHTML =
-        `<div class="small" style="opacity:.8">No recent alerts.</div>`;
-      return;
-    }
+    const title = isAccident ? "Accident detected" : "Alcohol driving";
+    const badge = isAccident ? "Accident" : "Alcohol";
+    const link = isAccident ? "accident.html" : "alerts.html";
 
-    alerts.forEach(alert => {
-      const created = alert.created_at
-        ? new Date(Number(alert.created_at)).toLocaleTimeString()
-        : "";
+    const item = document.createElement("div");
+    item.className = "item";
 
-      const isAccident = alert.category === "accident";
-      const badgeLabel = isAccident ? "Accident" : "Alcohol";
-
-      const title = isAccident
-        ? (alert.type === "fall_detected"
-            ? "Fall detected"
-            : alert.type === "sos_pressed"
-            ? "SOS pressed"
-            : "Accident detected")
-        : "Alcohol driving";
-
-      const unit = alert.device_id != null
-        ? `Device ${alert.device_id}`
-        : "Unknown unit";
-
-      const linkHref = isAccident ? "accident.html" : "alerts.html";
-
-      const item = document.createElement("div");
-      item.className = "item";
-      item.innerHTML = `
-        <div class="l">
-          <span class="badge ${isAccident ? "alert" : ""}">${badgeLabel}</span>
-          <div>
-            <div>${title}</div>
-            <div class="small">${unit} • ${created}</div>
-          </div>
+    item.innerHTML = `
+      <div class="l">
+        <span class="badge ${isAccident ? "alert" : ""}">${badge}</span>
+        <div>
+          <div>${title}</div>
+          <div class="small">Device ${alert.device_id} • ${created}</div>
         </div>
-        <a class="link small" href="${linkHref}">OPEN</a>
-      `;
-      container.appendChild(item);
-    });
-  }
+      </div>
+      <a class="link small" href="${link}">OPEN</a>
+    `;
 
-  // ---------------- INIT ----------------
-
-  window.addEventListener("load", () => {
-    fetchLatest(DEFAULT_DEVICE_ID);
-    loadAlerts();
-    setInterval(() => fetchLatest(DEFAULT_DEVICE_ID), 5000);
-    setInterval(loadAlerts, 8000);
+    container.appendChild(item);
   });
+}
+
+/* =====================
+   INIT
+===================== */
+
+window.onload = () => {
+  fetchLatest(DEVICE_ID);
+  loadAlerts();
+  setInterval(() => fetchLatest(DEVICE_ID), 5000);
+  setInterval(loadAlerts, 8000);
+};
 </script>
+
 </body>
 </html>
