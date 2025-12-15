@@ -44,99 +44,104 @@
 <!-- bottom nav -->
 <div class="nav">
   <div class="bar">
-    <a class="tab" href="tracking.html"><span class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M4 11.5L12 4l8 7.5"/><path d="M6.5 10.5V20h11V10.5"/>
-      </svg>
-    </span></a>
-
-    <a class="tab" href="alerts.html"><span class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M18 10a6 6 0 10-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M9 20h6"/>
-      </svg>
-    </span></a>
-
-    <a class="tab" href="accident.html"><span class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M12 3l10 18H2L12 3z"/><path d="M12 9v4m0 4h.01"/>
-      </svg>
-    </span></a>
-
-    <a class="tab active" href="analytics.html"><span class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M12 8a4 4 0 100 8 4 4 0 000-8z"/>
-        <path d="M3 12l2.2-1M19 12l1.9-1M7 4l1.1 2M17 4l-1.1 2M7 20l1.1-2M17 20l-1.1-2"/>
-      </svg>
-    </span></a>
+    <a class="tab" href="tracking.html">🏠</a>
+    <a class="tab" href="alerts.html">🔔</a>
+    <a class="tab" href="accident.html">⚠️</a>
+    <a class="tab active" href="analytics.html">📊</a>
   </div>
 </div>
 
 <script>
-  const BACKEND = "https://pasafe-2.onrender.com";
+const BACKEND = "https://pasafe-2.onrender.com";
 
-  async function loadAnalytics() {
-    try {
-      const res = await fetch(`${BACKEND}/api/alerts`);
-      if (!res.ok) throw new Error("HTTP " + res.status);
+/* =====================
+   HELPERS
+===================== */
 
-      const alerts = await res.json();
+function isAlcohol(a) {
+  return a.type === "alcohol_alert";
+}
 
-      const total = alerts.length;
-      const alcohol = alerts.filter(a => a.type === "alcohol_alert").length;
-      const accident = total - alcohol;
+function getLabel(a) {
+  if (a.type === "alcohol_alert") return "Alcohol Detected";
+  if (a.type === "fall_detected") return "Fall Detected";
+  if (a.type === "sos_pressed") return "SOS Pressed";
+  if (a.type && a.type.startsWith("ble_")) return "BLE Emergency";
+  return "Emergency Alert";
+}
 
-      document.getElementById("total-alerts").textContent = total;
-      document.getElementById("alcohol-alerts").textContent = alcohol;
-      document.getElementById("accident-alerts").textContent = accident;
+/* =====================
+   LOAD ANALYTICS
+===================== */
 
-      renderRecent(alerts.slice(0, 5));
-    } catch (err) {
-      document.getElementById("recent-list").innerHTML =
-        `<div class="small" style="color:#ffb4b4">Failed to load analytics</div>`;
-      console.error(err);
-    }
+async function loadAnalytics() {
+  try {
+    const res = await fetch(`${BACKEND}/api/alerts`);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    const alerts = await res.json();
+    if (!Array.isArray(alerts)) throw new Error("Invalid data");
+
+    const alcoholCount = alerts.filter(isAlcohol).length;
+    const accidentCount = alerts.length - alcoholCount;
+
+    document.getElementById("total-alerts").textContent = alerts.length;
+    document.getElementById("alcohol-alerts").textContent = alcoholCount;
+    document.getElementById("accident-alerts").textContent = accidentCount;
+
+    renderRecent(alerts.slice(0, 5));
+  } catch (err) {
+    console.error(err);
+    document.getElementById("recent-list").innerHTML =
+      `<div class="small" style="color:#ffb4b4">Failed to load analytics</div>`;
+  }
+}
+
+/* =====================
+   RECENT ACTIVITY
+===================== */
+
+function renderRecent(alerts) {
+  const box = document.getElementById("recent-list");
+  box.innerHTML = "";
+
+  if (!alerts.length) {
+    box.innerHTML = "<div class='small'>No alerts yet.</div>";
+    return;
   }
 
-  function renderRecent(alerts) {
-    const box = document.getElementById("recent-list");
-    box.innerHTML = "";
+  alerts.forEach(a => {
+    const time = a.created_at
+      ? new Date(Number(a.created_at)).toLocaleString()
+      : "Unknown time";
 
-    if (!alerts.length) {
-      box.innerHTML = "<div class='small'>No alerts yet.</div>";
-      return;
-    }
+    const isAlcoholAlert = isAlcohol(a);
 
-    alerts.forEach(a => {
-      const time = a.created_at
-        ? new Date(Number(a.created_at)).toLocaleString()
-        : "Unknown time";
-
-      const label =
-        a.type === "alcohol_alert"
-          ? "Alcohol Detected"
-          : a.type === "fall_detected"
-          ? "Fall Detected"
-          : "Emergency Alert";
-
-      const item = document.createElement("div");
-      item.className = "item";
-      item.innerHTML = `
-        <div class="l">
-          <span class="badge ${a.type === "alcohol_alert" ? "" : "alert"}">${label}</span>
-          <div>
-            <div>Device ${a.device_id || "-"}</div>
-            <div class="small">${time}</div>
-          </div>
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `
+      <div class="l">
+        <span class="badge ${isAlcoholAlert ? "" : "alert"}">
+          ${getLabel(a)}
+        </span>
+        <div>
+          <div>Device ${a.device_id || "-"}</div>
+          <div class="small">${time}</div>
         </div>
-      `;
-      box.appendChild(item);
-    });
-  }
+      </div>
+    `;
+    box.appendChild(item);
+  });
+}
 
-  window.onload = () => {
-    loadAnalytics();
-    setInterval(loadAnalytics, 10000);
-  };
+/* =====================
+   INIT
+===================== */
+
+window.onload = () => {
+  loadAnalytics();
+  setInterval(loadAnalytics, 10000);
+};
 </script>
 
 </body>
