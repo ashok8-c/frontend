@@ -10,7 +10,7 @@
 
 <div class="app">
   <div class="header">
-    <a class="back" href="tracking.html" aria-label="Back">←</a>
+    <a class="back" href="tracking.html">←</a>
     <h1>Emergency Alerts</h1>
   </div>
 
@@ -21,7 +21,7 @@
     </div>
 
     <div id="alerts-list" class="list" style="margin-top:10px">
-      <div class="small" style="opacity:0.6">Fetching alerts...</div>
+      <div class="small" style="opacity:0.6">Fetching alerts…</div>
     </div>
   </div>
 </div>
@@ -35,126 +35,153 @@
 </div>
 
 <script>
-  const API_BASE = "https://pasafe-2.onrender.com";
-  let latestAlerts = [];
+const API_BASE = "https://pasafe-2.onrender.com";
+let latestAlerts = [];
 
-  async function fetchAllAlerts() {
-    const res = await fetch(`${API_BASE}/api/alerts`);
-    return await res.json();
+/* =====================
+   HELPERS
+===================== */
+
+function getCategory(type) {
+  if (type === "alcohol_alert") return "alcohol";
+  if (type && type.startsWith("ble_")) return "accident";
+  return "accident";
+}
+
+function notifyAuthority(kind) {
+  alert(
+    kind === "police"
+      ? "Police notified (demo)"
+      : "Hospital notified (demo)"
+  );
+}
+
+/* =====================
+   FETCH
+===================== */
+
+async function fetchAllAlerts() {
+  const res = await fetch(`${API_BASE}/api/alerts`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+/* =====================
+   RENDER
+===================== */
+
+function renderAlerts(alerts) {
+  const container = document.getElementById("alerts-list");
+  container.innerHTML = "";
+
+  if (!alerts.length) {
+    container.innerHTML = "<div class='small'>No alerts yet.</div>";
+    return;
   }
 
-  function getNotifyTarget(alert) {
-    if (alert.type === "alcohol_alert") {
-      return { label: "Notify Police", authority: "police" };
-    }
-    return { label: "Notify Hospital", authority: "hospital" };
-  }
+  alerts.forEach(a => {
+    const created = a.created_at
+      ? new Date(Number(a.created_at)).toLocaleString()
+      : "Unknown time";
 
-  async function notifyAuthority(alertId, authority) {
-    try {
-      const res = await fetch(`${API_BASE}/api/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alert_id: alertId, authority })
-      });
+    const category = getCategory(a.type);
+    const isAlcohol = category === "alcohol";
 
-      const data = await res.json();
-      if (data.ok) {
-        alert(`${authority.toUpperCase()} notified`);
-      } else {
-        alert("Notification failed");
-      }
-    } catch {
-      alert("Server error");
-    }
-  }
+    const hasLocation =
+      a.lat !== null && a.lon !== null &&
+      !isNaN(a.lat) && !isNaN(a.lon);
 
-  function renderAlerts(alerts) {
-    const container = document.getElementById("alerts-list");
-    container.innerHTML = "";
+    const mapLink = hasLocation
+      ? `https://www.google.com/maps?q=${a.lat},${a.lon}`
+      : "#";
 
-    if (!alerts.length) {
-      container.innerHTML = "<div class='small'>No alerts yet.</div>";
-      return;
-    }
+    const mapStyle = hasLocation
+      ? "pointer-events:auto; opacity:1"
+      : "pointer-events:none; opacity:.5";
 
-    alerts.forEach(a => {
-      const created = a.created_at
-        ? new Date(Number(a.created_at)).toLocaleString()
-        : "Time unknown";
+    const item = document.createElement("div");
+    item.className = "item";
 
-      const mapLink =
-        a.lat != null && a.lon != null
-          ? `https://maps.google.com/?q=${a.lat},${a.lon}`
-          : "#";
-
-      const notify = getNotifyTarget(a);
-
-      const item = document.createElement("div");
-      item.className = "item";
-
-      item.innerHTML = `
-        <div class="l">
-          <span class="badge ${a.type === 'alcohol_alert' ? '' : 'alert'}">
-            ${a.type === 'alcohol_alert' ? 'Alcohol' : 'Accident'}
-          </span>
-          <div>
-            <div>Device ${a.device_id}</div>
-            <div class="small">${created}</div>
-          </div>
+    item.innerHTML = `
+      <div class="l">
+        <span class="badge ${isAlcohol ? "" : "alert"}">
+          ${isAlcohol ? "Alcohol" : "Accident"}
+        </span>
+        <div>
+          <div>Device ${a.device_id || "-"}</div>
+          <div class="small">${created}</div>
         </div>
-        <div style="display:flex; gap:6px">
-          <a class="link small" href="${mapLink}" target="_blank">MAP</a>
-          <button class="btn small"
-            onclick="notifyAuthority('${a.id}','${notify.authority}')">
-            ${notify.label}
-          </button>
-        </div>
-      `;
+      </div>
 
-      container.appendChild(item);
-    });
-  }
+      <div style="display:flex; gap:6px; align-items:center">
+        <a class="link small"
+           href="${mapLink}"
+           target="_blank"
+           style="${mapStyle}">
+          MAP
+        </a>
 
-  function exportAlerts() {
-    if (!latestAlerts.length) return alert("No alerts");
+        <button class="btn small"
+          onclick="notifyAuthority('${isAlcohol ? "police" : "hospital"}')">
+          ${isAlcohol ? "Notify Police" : "Notify Hospital"}
+        </button>
+      </div>
+    `;
 
-    const csv = [
-      ["id","device_id","type","lat","lon","created_at"],
-      ...latestAlerts.map(a => [
-        a.id,
-        a.device_id,
-        a.type,
-        a.lat ?? "",
-        a.lon ?? "",
-        new Date(Number(a.created_at)).toISOString()
-      ])
-    ].map(r => r.join(",")).join("\n");
+    container.appendChild(item);
+  });
+}
 
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "alerts.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+/* =====================
+   EXPORT
+===================== */
 
-  async function loadAlerts() {
-    const alerts = await fetchAllAlerts();
-    alerts.sort((a,b)=> (b.created_at||0)-(a.created_at||0));
-    latestAlerts = alerts;
-    renderAlerts(alerts);
-  }
+function exportAlerts() {
+  if (!latestAlerts.length) return alert("No alerts to export");
 
-  window.onload = () => {
-    loadAlerts();
-    document.getElementById("export-link").onclick = e => {
-      e.preventDefault();
-      exportAlerts();
-    };
-    setInterval(loadAlerts, 10000);
+  const csv = [
+    ["id","device_id","type","lat","lon","created_at"],
+    ...latestAlerts.map(a => [
+      a.id,
+      a.device_id,
+      a.type,
+      a.lat ?? "",
+      a.lon ?? "",
+      a.created_at
+        ? new Date(Number(a.created_at)).toISOString()
+        : ""
+    ])
+  ].map(r => r.join(",")).join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "alerts.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* =====================
+   INIT
+===================== */
+
+async function loadAlerts() {
+  const alerts = await fetchAllAlerts();
+  alerts.sort((a,b)=>(b.created_at||0)-(a.created_at||0));
+  latestAlerts = alerts;
+  renderAlerts(alerts);
+}
+
+window.onload = () => {
+  loadAlerts();
+  document.getElementById("export-link").onclick = e => {
+    e.preventDefault();
+    exportAlerts();
   };
+  setInterval(loadAlerts, 10000);
+};
 </script>
 
 </body>
